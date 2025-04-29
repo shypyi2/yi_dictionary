@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self' data: gap: https://ssl.gstatic.com 'unsafe-eval' 'unsafe-inline'">
+    <meta name="format-detection" content="telephone=no">
+    <meta name="msapplication-tap-highlight" content="no">
+    <title>彝汉双解词典（优化版）</title>
+    <style>
+        body {
+            font-family: "微软雅黑", sans-serif;
+            padding: 10px;
+            background: #f0f2f5;
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        /* 搜索框样式保持不变 */
+        .search-box {
+            display: flex;
+            gap: 8px;
+            margin: 15px 0;
+        }
+        #searchInput {
+            flex: 1;
+            padding: 12px;
+            border: 1px solid #007bff;
+            border-radius: 8px;
+            font-size: 16px;
+        }
+        button {
+            padding: 0 20px;
+            background: #007bff;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            cursor: pointer;
+        }
+
+        /* 结果卡片样式优化 */
+        .result-card {
+            background: white;
+            border-radius: 10px;
+            padding: 15px;
+            margin-top: 15px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        .yi-character {
+            font-size: 48px;
+            text-align: center;
+            margin: 10px 0;
+        }
+
+        /* 新增组词分类样式 */
+        .word-groups {
+            margin-top: 15px;
+            border-top: 1px dashed #ddd;
+            padding-top: 10px;
+        }
+        .word-pair {
+            display: flex;
+            margin: 8px 0;
+            padding: 8px;
+            background: #f8f9fa;
+        }
+        .word-yi {
+            width: 120px;
+            font-size: 1.2em;
+            color: #007bff;
+        }
+        .word-meaning {
+            flex: 1;
+            color: #666;
+        }
+        .long-phrase {
+            background: #fff5e6;
+            border-left: 4px solid #ff9900;
+        }
+        .warning {
+            color: #dc3545;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <h2 style="color: #007bff; text-align: center">彝汉双解词典</h2>
+    
+    <!-- 搜索区域保持不变 -->
+    <div class="search-box">
+        <input type="text" id="searchInput" placeholder="输入彝文/拼音/词语" autofocus>
+        <button onclick="searchWord()">查询</button>
+    </div>
+
+    <!-- 结果展示区域 -->
+    <div id="resultContainer"></div>
+
+    <script>
+        // 全局词典数据
+        let dictionary = [];
+        
+        // 数据加载逻辑保持不变
+        fetch('dictionary_v2.json')
+            .then(response => response.json())
+            .then(data => {
+                dictionary = data;
+                console.log('词典加载完成，共加载', data.length, '个词条');
+            })
+            .catch(error => {
+                console.error('数据加载失败:', error);
+                document.getElementById('resultContainer').innerHTML = 
+                    '<div class="result-card warning">词典数据加载失败，请检查文件</div>';
+            });
+
+        // 核心搜索函数重构
+        function searchWord() {
+            const input = document.getElementById('searchInput').value.trim();
+            const container = document.getElementById('resultContainer');
+            
+            if (!input) {
+                container.innerHTML = '<div class="result-card warning">请输入查询内容</div>';
+                return;
+            }
+
+            // 判断输入类型
+            const isYiChar = isYiCharacter(input);
+            const isFullPhrase = isCompletePhrase(input);
+
+            // 执行搜索
+            let results = [];
+            if (isYiChar || isFullPhrase) {
+                // 彝文字符或完整词语搜索
+                results = dictionary.filter(item => 
+                    item.彝文字符 === input || 
+                    item.组词.some(g => g.彝文 === input || g.词组释义 === input)
+                );
+            } else {
+                // 拼音精确匹配
+                results = dictionary.filter(item => 
+                    item.拼音.toLowerCase() === input.toLowerCase()
+                );
+            }
+
+            displayResults(results, input);
+        }
+
+        // 显示结果函数重构
+        function displayResults(results, input) {
+            const container = document.getElementById('resultContainer');
+            
+            if (results.length === 0) {
+                container.innerHTML = '<div class="result-card warning">未找到匹配结果</div>';
+                return;
+            }
+
+            container.innerHTML = results.map(item => {
+                // 分离组词类型
+                const groups = classifyWordGroups(item.组词, input);
+                
+                return `
+                    <div class="result-card">
+                        <div class="yi-character">${item.彝文字符}</div>
+                        <div style="text-align:center;margin:10px 0">
+                            🔤 拼音：<strong>${item.拼音}</strong>
+                        </div>
+                        ${renderWordGroups(groups)}
+                    </div>`;
+            }).join('');
+        }
+
+        // 新增：组词分类函数
+        function classifyWordGroups(groups, input) {
+            const isPhraseSearch = input.length >= 4 || isCompletePhrase(input);
+            
+            return groups.reduce((acc, group) => {
+                const yiLength = group.彝文.length;
+                const isLongPhrase = yiLength >= 4;
+                
+                if (isPhraseSearch) {
+                    // 词语搜索显示所有匹配项
+                    if (group.彝文 === input || group.词组释义 === input) {
+                        acc.all.push(group);
+                    }
+                } else {
+                    // 单字搜索优先两字组词
+                    if (yiLength === 2) {
+                        acc.twoChar.push(group);
+                    } else if (yiLength === 3) {
+                        acc.threeChar.push(group);
+                    } else {
+                        acc.longPhrase.push(group);
+                    }
+                }
+                return acc;
+            }, { twoChar: [], threeChar: [], longPhrase: [], all: [] });
+        }
+
+        // 新增：组词渲染函数
+        function renderWordGroups(groups) {
+            let html = '<div class="word-groups">';
+            
+            // 词语搜索显示所有结果
+            if (groups.all.length > 0) {
+                html += groups.all.map(g => `
+                    <div class="word-pair long-phrase">
+                        <div class="word-yi">${g.彝文}</div>
+                        <div class="word-meaning">${g.词组释义}</div>
+                    </div>
+                `).join('');
+            } else {
+                // 单字搜索显示优先级
+                const displayGroups = [
+                    ...groups.twoChar.slice(0, 2),
+                    ...(groups.twoChar.length < 2 ? groups.threeChar.slice(0, 2 - groups.twoChar.length) : []),
+                    ...(groups.twoChar.length + groups.threeChar.length < 2 ? groups.longPhrase.slice(0, 2 - groups.twoChar.length - groups.threeChar.length) : [])
+                ];
+
+                html += displayGroups.map(g => `
+                    <div class="word-pair ${g.彝文.length > 2 ? 'long-phrase' : ''}">
+                        <div class="word-yi">${g.彝文}</div>
+                        <div class="word-meaning">${g.词组释义}</div>
+                    </div>
+                `).join('');
+            }
+
+            return html + '</div>';
+        }
+
+        // 工具函数
+        function isYiCharacter(str) {
+            return /^[\uA000-\uA48F]$/.test(str);
+        }
+
+        function isCompletePhrase(str) {
+            return str.length >= 2 && (
+                /[\uA000-\uA48F]{2,}/.test(str) ||  // 彝文词语
+                /[\u4e00-\u9fa5]{2,}/.test(str)     // 汉字词语
+            );
+        }
+
+        // 保持原有语音功能和回车事件
+        function speak(text) { /* 保持不变 */ }
+        document.getElementById('searchInput').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') searchWord();
+        });
+    </script>
+</body>
+</html>
